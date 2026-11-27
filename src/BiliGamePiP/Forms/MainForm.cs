@@ -69,7 +69,7 @@ public sealed class MainForm : Form
         var btnBack = CreateToolbarButton("←", 34, Color.FromArgb(42, 42, 54));
         btnBack.Click += (_, _) =>
         {
-            if (_webViewReady && _webView.CoreWebView2.CanGoBack)
+            if (_webViewReady && _webView.CoreWebView2?.CanGoBack == true)
             {
                 _webView.CoreWebView2.GoBack();
             }
@@ -80,7 +80,7 @@ public sealed class MainForm : Form
         {
             if (_webViewReady)
             {
-                _webView.CoreWebView2.Reload();
+                _webView.CoreWebView2?.Reload();
             }
         };
 
@@ -247,7 +247,8 @@ public sealed class MainForm : Form
 
     private async Task InitializeAsync()
     {
-        _hotkeyManager = new HotkeyManager(Handle);
+        _hotkeyManager = new HotkeyManager();
+        _hotkeyManager.HotkeyPressed += HandleGlobalHotkey;
         ApplyHotkeysWithWarning();
 
         try
@@ -381,6 +382,8 @@ public sealed class MainForm : Form
 
             _trayToggleMiniItem.Text = "退出置顶小窗";
             _ = ExecuteScriptSafeAsync(BiliScript.GetMiniModeScript(true));
+            _ = ExecuteScriptSafeAsync(BiliScript.GetShowOsdScript(
+                $"📌 置顶小窗已开启 · {_settings.SeekBackward.ToDisplayString()}后退 / {_settings.PlayPause.ToDisplayString()}暂停 / {_settings.SeekForward.ToDisplayString()}快进"));
         }
         else
         {
@@ -598,15 +601,17 @@ public sealed class MainForm : Form
         }
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        if (_isClickThrough)
+        {
+            Win32.SetClickThrough(Handle, true);
+        }
+    }
+
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == Win32.WM_HOTKEY)
-        {
-            var action = (HotkeyAction)m.WParam.ToInt32();
-            HandleGlobalHotkey(action);
-            return;
-        }
-
         if (m.Msg == Win32.WM_NCHITTEST && _isMiniMode && !_isClickThrough)
         {
             base.WndProc(ref m);

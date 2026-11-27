@@ -5,6 +5,15 @@ namespace BiliGamePiP.Services;
 public static class BiliScript
 {
     private const string CommonHelperJs = """
+        function __bgpGetBiliPlayer() {
+            try {
+                if (window.player && typeof window.player.play === 'function' && typeof window.player.pause === 'function') {
+                    return window.player;
+                }
+            } catch (_) {}
+            return null;
+        }
+
         function __bgpFindMedia() {
             const candidates = [];
             const collect = (root) => {
@@ -22,7 +31,6 @@ public static class BiliScript
             });
             if (candidates.length === 0) return null;
 
-            // 优先选择 B 站主播放器区域内、已加载或面积最大的视频元素
             candidates.sort((a, b) => {
                 const aInBpx = a.closest && a.closest('#bilibili-player, .bpx-player-video-wrap') ? 1 : 0;
                 const bInBpx = b.closest && b.closest('#bilibili-player, .bpx-player-video-wrap') ? 1 : 0;
@@ -63,14 +71,14 @@ public static class BiliScript
                     pointerEvents: 'none',
                     padding: '6px 14px',
                     borderRadius: '999px',
-                    background: 'rgba(18, 18, 24, 0.84)',
+                    background: 'rgba(18, 18, 24, 0.86)',
                     color: '#ffffff',
                     fontSize: '13px',
                     fontWeight: '600',
                     fontFamily: '"Microsoft YaHei UI", "Segoe UI", sans-serif',
                     letterSpacing: '0.3px',
                     boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
-                    border: '1px solid rgba(251, 114, 153, 0.55)',
+                    border: '1px solid rgba(251, 114, 153, 0.6)',
                     whiteSpace: 'nowrap',
                     transition: 'opacity 0.22s ease'
                 });
@@ -81,38 +89,73 @@ public static class BiliScript
             clearTimeout(window.__bgpOsdTimer);
             window.__bgpOsdTimer = setTimeout(() => {
                 if (el) el.style.opacity = '0';
-            }, 1100);
+            }, 1150);
         }
         """;
 
     public static string GetTogglePlayPauseScript() => $$"""
         (() => {
             {{CommonHelperJs}}
-            const v = __bgpFindMedia();
-            if (!v) {
-                __bgpShowOsd('未检测到正在播放的视频');
+            // 优先走 B 站原生 player 实例，确保播放状态与弹幕完全同步
+            const bp = __bgpGetBiliPlayer();
+            if (bp && typeof bp.isPaused === 'function') {
+                if (bp.isPaused()) {
+                    bp.play();
+                    __bgpShowOsd('▶ 继续播放');
+                } else {
+                    bp.pause();
+                    __bgpShowOsd('⏸ 已暂停');
+                }
                 return;
             }
-            if (v.paused) {
-                const p = v.play();
-                if (p && typeof p.catch === 'function') p.catch(() => {});
-                __bgpShowOsd('▶ 继续播放');
-            } else {
-                v.pause();
-                __bgpShowOsd('⏸ 已暂停');
+
+            const v = __bgpFindMedia();
+            if (v) {
+                if (v.paused) {
+                    const p = v.play();
+                    if (p && typeof p.catch === 'function') p.catch(() => {});
+                    __bgpShowOsd('▶ 继续播放');
+                } else {
+                    v.pause();
+                    __bgpShowOsd('⏸ 已暂停');
+                }
+                return;
             }
+
+            const playBtn = document.querySelector('.bpx-player-ctrl-play');
+            if (playBtn) {
+                playBtn.click();
+                __bgpShowOsd('⏯ 切换播放状态');
+                return;
+            }
+
+            __bgpShowOsd('未检测到正在播放的视频');
         })();
         """;
 
     public static string GetSeekScript(int deltaSeconds) => $$"""
         (() => {
             {{CommonHelperJs}}
+            const delta = {{deltaSeconds}};
+
+            const bp = __bgpGetBiliPlayer();
+            if (bp && typeof bp.getCurrentTime === 'function' && typeof bp.seek === 'function') {
+                const cur = Number(bp.getCurrentTime()) || 0;
+                const dur = typeof bp.getDuration === 'function' ? Number(bp.getDuration()) : NaN;
+                let target = cur + delta;
+                if (target < 0) target = 0;
+                if (isFinite(dur) && dur > 0 && target > dur) target = Math.max(0, dur - 0.1);
+                bp.seek(target);
+                const prefix = delta >= 0 ? `⏩ +${delta}秒` : `⏪ ${delta}秒`;
+                __bgpShowOsd(`${prefix}  ${__bgpFormatTime(target)}`);
+                return;
+            }
+
             const v = __bgpFindMedia();
             if (!v) {
                 __bgpShowOsd('未检测到正在播放的视频');
                 return;
             }
-            const delta = {{deltaSeconds}};
             const cur = Number(v.currentTime) || 0;
             const dur = Number(v.duration);
             let target = cur + delta;

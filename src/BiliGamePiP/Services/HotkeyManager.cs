@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Windows.Forms;
 using BiliGamePiP.Models;
 using BiliGamePiP.Native;
 
@@ -14,14 +15,20 @@ public enum HotkeyAction
     ToggleMiniMode = 1005
 }
 
+/// <summary>
+/// 使用独立的隐藏 NativeWindow 接收 WM_HOTKEY，彻底避免 MainForm 切换 FormBorderStyle
+/// 导致句柄重建 (RecreateHandle) 时全局快捷键全部失效的问题。
+/// </summary>
 public sealed class HotkeyManager : IDisposable
 {
-    private readonly IntPtr _windowHandle;
+    private readonly HotkeyMessageWindow _messageWindow;
     private readonly HashSet<int> _registeredIds = new();
 
-    public HotkeyManager(IntPtr windowHandle)
+    public event Action<HotkeyAction>? HotkeyPressed;
+
+    public HotkeyManager()
     {
-        _windowHandle = windowHandle;
+        _messageWindow = new HotkeyMessageWindow(action => HotkeyPressed?.Invoke(action));
     }
 
     public IReadOnlyList<string> Apply(AppSettings settings)
@@ -53,7 +60,7 @@ public sealed class HotkeyManager : IDisposable
 
         int id = (int)action;
         uint mods = binding.Modifiers | (noRepeat ? Win32.MOD_NOREPEAT : 0u);
-        bool ok = Win32.RegisterHotKey(_windowHandle, id, mods, (uint)binding.VirtualKey);
+        bool ok = Win32.RegisterHotKey(_messageWindow.Handle, id, mods, (uint)binding.VirtualKey);
         if (ok)
         {
             _registeredIds.Add(id);
@@ -66,9 +73,12 @@ public sealed class HotkeyManager : IDisposable
 
     public void UnregisterAll()
     {
-        foreach (int id in _registeredIds)
+        if (_messageWindow.Handle != IntPtr.Zero)
         {
-            Win32.UnregisterHotKey(_windowHandle, id);
+            foreach (int id in _registeredIds)
+            {
+                Win32.UnregisterHotKey(_messageWindow.Handle, id);
+            }
         }
         _registeredIds.Clear();
     }
@@ -76,5 +86,32 @@ public sealed class HotkeyManager : IDisposable
     public void Dispose()
     {
         UnregisterAll();
+        _messageWindow.DestroyHandle();
+    }
+
+    private sealed class HotkeyMessageWindow : NativeWindow
+    {
+        private readonly Action<HotkeyAction> _onHotkey;
+
+        public HotkeyMessageWindow(Action<HotkeyAction> onHotkey)
+        {
+            _onHotkey = onHotkey;
+            CreateHandle(new CreateParams
+            {
+                Caption = "BiliGamePiP_HotkeySink"
+            });
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == Win32.WM_HOTKEY)
+            {
+                var action = (HotkeyAction)m.WParam.ToInt32();
+                _onHotkey(action);
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
     }
 }

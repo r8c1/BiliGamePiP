@@ -1,10 +1,15 @@
-name: Build Windows Installer
+name: Build Windows Installer & Release
 
 on:
   push:
     branches: [ main, master ]
     tags: [ 'v*' ]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional release tag to publish (e.g. v1.1.0). Leave empty for artifact-only build.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -17,17 +22,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $tag = "${{ github.ref_name }}"
+            $version = $tag.TrimStart('v')
+            $shouldRelease = "true"
+          } elseif ("${{ inputs.release_tag }}" -ne "") {
+            $tag = "${{ inputs.release_tag }}"
+            $version = $tag.TrimStart('v')
+            $shouldRelease = "true"
+          } else {
+            [xml]$csproj = Get-Content "src/BiliGamePiP/BiliGamePiP.csproj"
+            $version = $csproj.Project.PropertyGroup.Version | Select-Object -First 1
+            if (-not $version) { $version = "1.0.0" }
+            $tag = "v$version"
+            $shouldRelease = "false"
+          }
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "should_release=$shouldRelease" >> $env:GITHUB_OUTPUT
+          Write-Host "Resolved version=$version, tag=$tag, should_release=$shouldRelease"
+
       - name: Setup .NET 8 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
       - name: Publish self-contained win-x64 app
+        shell: pwsh
         run: |
           dotnet publish src/BiliGamePiP/BiliGamePiP.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
+            -p:Version=${{ steps.ver.outputs.version }} `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o publish/win-x64
@@ -43,18 +74,40 @@ jobs:
       - name: Build Setup .exe with Inno Setup
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/BiliGamePiP.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=${{ steps.ver.outputs.version }}" `
+            installer/BiliGamePiP.iss
           Get-ChildItem dist
 
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BiliGamePiP-Windows-Installer
+          name: BiliGamePiP-Windows-Installer-${{ steps.ver.outputs.version }}
           path: dist/BiliGamePiP-Setup-*.exe
           if-no-files-found: error
 
-      - name: Create GitHub Release on version tags
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish GitHub Release
+        if: steps.ver.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "BiliGamePiP ${{ steps.ver.outputs.tag }}"
+          generate_release_notes: true
+          make_latest: true
+          body: |
+            ## BiliGamePiP ${{ steps.ver.outputs.tag }} — Windows 安装包
+
+            专为《原神》《明日方舟：终末地》等 Windows 游戏玩家打造的 B 站置顶小窗 + 全局快捷键工具。
+
+            ### 快速上手
+            1. 下载下方 `BiliGamePiP-Setup-${{ steps.ver.outputs.version }}.exe` 双击安装（支持简体中文 / English 安装向导）。
+            2. 打开软件并登录 B 站，选好视频后点击 **「📌 小窗置顶」**（或按 `Num.`）。
+            3. 将游戏画面设为 **无边框窗口化**，即可在游戏内不切屏控制视频：
+               - `Num7`：后退 5 秒
+               - `Num8`：暂停 / 播放
+               - `Num9`：快进 5 秒
+               - `Num0`：锁定 / 解锁鼠标穿透（防误触）
+               - `Num.`：切换普通选片 / 置顶小窗
+
+            > 官网介绍与图文教程：https://r8c1.github.io/BiliGamePiP/
           files: dist/BiliGamePiP-Setup-*.exe
