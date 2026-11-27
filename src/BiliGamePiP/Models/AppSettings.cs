@@ -94,6 +94,7 @@ public sealed class AppSettings
     public int MiniHeight { get; set; } = 270;
 
     public string LastUrl { get; set; } = "https://www.bilibili.com";
+    public string SkippedUpdateVersion { get; set; } = string.Empty;
 
     public AppSettings Clone() => new()
     {
@@ -108,6 +109,7 @@ public sealed class AppSettings
         MiniY = MiniY,
         MiniWidth = MiniWidth,
         MiniHeight = MiniHeight,
-        LastUrl = LastUrl
+        LastUrl = LastUrl,
+        SkippedUpdateVersion = SkippedUpdateVersion
     };
 }

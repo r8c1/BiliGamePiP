@@ -13,9 +13,9 @@
     <RootNamespace>BiliGamePiP</RootNamespace>
     <Product>BiliGamePiP</Product>
     <Description>B站游戏置顶小窗与全局快捷键控制工具</Description>
-    <Version>1.1.0</Version>
-    <FileVersion>1.1.0.0</FileVersion>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <Version>1.2.0</Version>
+    <FileVersion>1.2.0.0</FileVersion>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>

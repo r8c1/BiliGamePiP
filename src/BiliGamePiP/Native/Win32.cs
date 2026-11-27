@@ -69,6 +69,50 @@ internal static class Win32
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWA_BORDER_COLOR = 34;
+    private const int DWMWA_CAPTION_COLOR = 35;
+
+    public static void ApplyDarkWindowChrome(IntPtr hWnd, System.Drawing.Color captionColor, System.Drawing.Color? borderColor = null, bool roundedCorners = true)
+    {
+        if (hWnd == IntPtr.Zero) return;
+
+        try
+        {
+            int dark = 1;
+            if (DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int)) != 0)
+            {
+                DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, ref dark, sizeof(int));
+            }
+
+            int captionRef = ToColorRef(captionColor);
+            DwmSetWindowAttribute(hWnd, DWMWA_CAPTION_COLOR, ref captionRef, sizeof(int));
+
+            if (borderColor.HasValue)
+            {
+                int borderRef = ToColorRef(borderColor.Value);
+                DwmSetWindowAttribute(hWnd, DWMWA_BORDER_COLOR, ref borderRef, sizeof(int));
+            }
+
+            if (roundedCorners)
+            {
+                int roundPref = 2; // DWMWCP_ROUND
+                DwmSetWindowAttribute(hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref roundPref, sizeof(int));
+            }
+        }
+        catch
+        {
+            // Older Windows builds silently fall back to standard chrome
+        }
+    }
+
+    private static int ToColorRef(System.Drawing.Color c) => c.R | (c.G << 8) | (c.B << 16);
+
     public static void SetClickThrough(IntPtr hWnd, bool enabled)
     {
         if (hWnd == IntPtr.Zero) return;

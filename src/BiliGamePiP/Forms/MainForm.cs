@@ -1,9 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using BiliGamePiP.Controls;
 using BiliGamePiP.Models;
 using BiliGamePiP.Native;
 using BiliGamePiP.Services;
@@ -18,9 +20,11 @@ public sealed class MainForm : Form
 
     private AppSettings _settings;
     private HotkeyManager? _hotkeyManager;
+    private UpdateInfo? _availableUpdate;
 
     private readonly Panel _normalToolbar;
-    private readonly TextBox _urlTextBox;
+    private readonly TechAddressBar _addressBar;
+    private readonly TechButton _btnUpdate;
     private readonly Panel _miniDragBar;
     private readonly Label _miniHintLabel;
     private readonly WebView2 _webView;
@@ -31,31 +35,36 @@ public sealed class MainForm : Form
     private bool _webViewReady;
     private bool _isMiniMode;
     private bool _isClickThrough;
-    private Rectangle _normalBounds = new(120, 80, 1220, 780);
+    private Rectangle _normalBounds = new(120, 80, 1240, 790);
     private FormWindowState _normalWindowState = FormWindowState.Normal;
 
     public MainForm()
     {
         _settings = SettingsStore.Load();
 
-        Text = "BiliGamePiP - B站游戏置顶小窗";
+        Text = $"BiliGamePiP {UpdateService.CurrentVersionText} — B站游戏置顶小窗";
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(1220, 780);
+        Size = new Size(1240, 790);
         MinimumSize = new Size(280, 170);
-        BackColor = Color.FromArgb(20, 20, 26);
-        ForeColor = Color.White;
+        BackColor = TechTheme.BgWindow;
+        ForeColor = TechTheme.TextPrimary;
         Font = new Font("Microsoft YaHei UI", 9.5f);
         AutoScaleMode = AutoScaleMode.Dpi;
 
         TryLoadAppIcon();
 
-        // 1. 普通浏览模式顶部工具栏
+        // 1. 极简暗夜科技感顶部工具栏
         _normalToolbar = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 44,
-            BackColor = Color.FromArgb(26, 26, 34),
-            Padding = new Padding(8, 6, 8, 6)
+            Height = 50,
+            BackColor = TechTheme.BgWindow,
+            Padding = new Padding(10, 9, 10, 9)
+        };
+        _normalToolbar.Paint += (_, e) =>
+        {
+            using var pen = new Pen(TechTheme.BorderSubtle, 1f);
+            e.Graphics.DrawLine(pen, 0, _normalToolbar.Height - 1, _normalToolbar.Width, _normalToolbar.Height - 1);
         };
 
         var leftBar = new FlowLayoutPanel
@@ -66,25 +75,47 @@ public sealed class MainForm : Form
             Margin = Padding.Empty
         };
 
-        var btnBack = CreateToolbarButton("←", 34, Color.FromArgb(42, 42, 54));
+        var btnBack = new TechButton
+        {
+            Text = "‹",
+            Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+            Size = new Size(34, 32),
+            CornerRadius = 9,
+            Margin = new Padding(0, 0, 6, 0)
+        };
         btnBack.Click += (_, _) =>
         {
-            if (_webViewReady && _webView.CoreWebView2?.CanGoBack == true)
+            var core = _webView.CoreWebView2;
+            if (_webViewReady && core is not null && core.CanGoBack)
             {
-                _webView.CoreWebView2.GoBack();
+                core.GoBack();
             }
         };
 
-        var btnRefresh = CreateToolbarButton("↻", 34, Color.FromArgb(42, 42, 54));
+        var btnRefresh = new TechButton
+        {
+            Text = "↻",
+            Font = new Font("Segoe UI Symbol", 10.5f),
+            Size = new Size(34, 32),
+            CornerRadius = 9,
+            Margin = new Padding(0, 0, 6, 0)
+        };
         btnRefresh.Click += (_, _) =>
         {
-            if (_webViewReady)
+            var core = _webView.CoreWebView2;
+            if (_webViewReady && core is not null)
             {
-                _webView.CoreWebView2?.Reload();
+                core.Reload();
             }
         };
 
-        var btnHome = CreateToolbarButton("首页", 54, Color.FromArgb(42, 42, 54));
+        var btnHome = new TechButton
+        {
+            Text = "首页",
+            Size = new Size(56, 32),
+            CornerRadius = 9,
+            Margin = new Padding(0, 0, 8, 0)
+        };
         btnHome.Click += (_, _) => NavigateToInput("https://www.bilibili.com");
 
         leftBar.Controls.Add(btnBack);
@@ -99,60 +130,90 @@ public sealed class MainForm : Form
             Margin = Padding.Empty
         };
 
-        var btnMini = CreateToolbarButton("📌 小窗置顶", 104, Color.FromArgb(251, 114, 153));
+        _btnUpdate = new TechButton
+        {
+            Text = "↑ 有新版本",
+            Variant = TechButtonVariant.CyanAccent,
+            Size = new Size(98, 32),
+            CornerRadius = 16,
+            Margin = new Padding(8, 0, 0, 0),
+            Visible = false
+        };
+        _btnUpdate.Click += (_, _) =>
+        {
+            if (_availableUpdate is not null)
+            {
+                ShowUpdateDialog(_availableUpdate);
+            }
+        };
+
+        var btnMini = new TechButton
+        {
+            Text = "📌 小窗置顶",
+            Variant = TechButtonVariant.PrimaryGradient,
+            Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold),
+            Size = new Size(106, 32),
+            CornerRadius = 16,
+            Margin = new Padding(8, 0, 0, 0)
+        };
         btnMini.Click += (_, _) => SetMiniMode(true);
 
-        var btnSettings = CreateToolbarButton("⚙ 快捷键", 86, Color.FromArgb(46, 46, 60));
+        var btnSettings = new TechButton
+        {
+            Text = "⚙ 设置",
+            Size = new Size(76, 32),
+            CornerRadius = 16,
+            Margin = new Padding(8, 0, 0, 0)
+        };
         btnSettings.Click += (_, _) => OpenSettingsDialog();
 
+        rightBar.Controls.Add(_btnUpdate);
         rightBar.Controls.Add(btnMini);
         rightBar.Controls.Add(btnSettings);
 
         var urlContainer = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(8, 2, 8, 2)
+            Padding = new Padding(4, 0, 4, 0)
         };
-        _urlTextBox = new TextBox
+        _addressBar = new TechAddressBar
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(38, 38, 50),
-            ForeColor = Color.FromArgb(235, 235, 244),
-            BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "输入 B 站链接或 BV 号，按回车打开..."
+            PlaceholderText = "输入 B 站链接或 BV 号，回车直达..."
         };
-        _urlTextBox.KeyDown += (_, e) =>
-        {
-            if (e.KeyCode == Keys.Enter)
-            {
-                e.SuppressKeyPress = true;
-                NavigateToInput(_urlTextBox.Text);
-            }
-        };
-        urlContainer.Controls.Add(_urlTextBox);
+        _addressBar.Submitted += (_, input) => NavigateToInput(input);
+        urlContainer.Controls.Add(_addressBar);
 
         _normalToolbar.Controls.Add(urlContainer);
         _normalToolbar.Controls.Add(leftBar);
         _normalToolbar.Controls.Add(rightBar);
 
-        // 2. 小窗置顶模式顶部极简拖拽条（开启鼠标穿透时自动隐藏）
+        // 2. 小窗置顶模式顶部极简科技感拖拽条（开启鼠标穿透时自动隐藏）
         _miniDragBar = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 26,
-            BackColor = Color.FromArgb(26, 26, 34),
+            Height = 30,
+            BackColor = Color.FromArgb(16, 18, 28),
             Visible = false,
-            Cursor = Cursors.SizeAll
+            Cursor = Cursors.SizeAll,
+            Padding = new Padding(0, 2, 0, 0)
+        };
+        _miniDragBar.Paint += (_, e) =>
+        {
+            if (_miniDragBar.Width <= 0) return;
+            var lineRect = new Rectangle(0, 0, _miniDragBar.Width, 2);
+            using var brush = new LinearGradientBrush(lineRect, TechTheme.AccentPink, TechTheme.AccentCyan, 0f);
+            e.Graphics.FillRectangle(brush, lineRect);
         };
         _miniDragBar.MouseDown += OnMiniBarMouseDown;
 
         _miniHintLabel = new Label
         {
             Dock = DockStyle.Fill,
-            ForeColor = Color.FromArgb(190, 194, 210),
-            Font = new Font("Microsoft YaHei UI", 8f),
+            ForeColor = TechTheme.TextSecondary,
+            Font = new Font("Consolas", 8.2f),
             TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(8, 0, 0, 0),
+            Padding = new Padding(10, 0, 0, 0),
             Cursor = Cursors.SizeAll
         };
         _miniHintLabel.MouseDown += OnMiniBarMouseDown;
@@ -162,16 +223,39 @@ public sealed class MainForm : Form
             Dock = DockStyle.Right,
             AutoSize = true,
             WrapContents = false,
-            Padding = new Padding(0, 2, 2, 2)
+            Padding = new Padding(0, 3, 4, 3)
         };
 
-        var btnLock = CreateMiniButton("🔒 穿透", 60, Color.FromArgb(52, 52, 68));
+        var btnLock = new TechButton
+        {
+            Text = "🔒 穿透",
+            Variant = TechButtonVariant.CyanAccent,
+            Font = new Font("Microsoft YaHei UI", 8f),
+            Size = new Size(60, 22),
+            CornerRadius = 6,
+            Margin = new Padding(4, 0, 0, 0)
+        };
         btnLock.Click += (_, _) => SetClickThrough(true);
 
-        var btnExitMini = CreateMiniButton("⛶ 选片", 58, Color.FromArgb(251, 114, 153));
+        var btnExitMini = new TechButton
+        {
+            Text = "⛶ 选片",
+            Variant = TechButtonVariant.PrimaryGradient,
+            Font = new Font("Microsoft YaHei UI", 8f),
+            Size = new Size(58, 22),
+            CornerRadius = 6,
+            Margin = new Padding(4, 0, 0, 0)
+        };
         btnExitMini.Click += (_, _) => SetMiniMode(false);
 
-        var btnHideToTray = CreateMiniButton("—", 28, Color.FromArgb(44, 44, 58));
+        var btnHideToTray = new TechButton
+        {
+            Text = "—",
+            Font = new Font("Microsoft YaHei UI", 8f),
+            Size = new Size(26, 22),
+            CornerRadius = 6,
+            Margin = new Padding(4, 0, 0, 0)
+        };
         btnHideToTray.Click += (_, _) => Hide();
 
         miniButtons.Controls.Add(btnLock);
@@ -185,16 +269,20 @@ public sealed class MainForm : Form
         _webView = new WebView2
         {
             Dock = DockStyle.Fill,
-            DefaultBackgroundColor = Color.Black
+            DefaultBackgroundColor = TechTheme.BgWindow
         };
 
-        // 添加顺序：Fill 放最前，Top 放后面以保证正确 Dock 布局
         Controls.Add(_webView);
         Controls.Add(_miniDragBar);
         Controls.Add(_normalToolbar);
 
-        // 4. 系统托盘（小窗锁定时也可随时从托盘解锁或调整）
-        var trayMenu = new ContextMenuStrip();
+        // 4. 暗黑风格系统托盘菜单
+        var trayMenu = new ContextMenuStrip
+        {
+            Renderer = new DarkMenuRenderer(),
+            ShowImageMargin = false,
+            Font = new Font("Microsoft YaHei UI", 9f)
+        };
         trayMenu.Items.Add("显示并置前窗口", null, (_, _) => RestoreAndFocus());
         _trayToggleMiniItem = new ToolStripMenuItem("进入置顶小窗", null, (_, _) => SetMiniMode(!_isMiniMode));
         trayMenu.Items.Add(_trayToggleMiniItem);
@@ -202,14 +290,15 @@ public sealed class MainForm : Form
         trayMenu.Items.Add(_trayToggleClickThroughItem);
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("暂停 / 播放", null, (_, _) => _ = ExecuteScriptSafeAsync(BiliScript.GetTogglePlayPauseScript()));
-        trayMenu.Items.Add("快捷键与小窗设置...", null, (_, _) => OpenSettingsDialog());
+        trayMenu.Items.Add("偏好设置...", null, (_, _) => OpenSettingsDialog());
+        trayMenu.Items.Add("检查更新...", null, async (_, _) => await CheckUpdatesManuallyAsync());
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("退出 BiliGamePiP", null, (_, _) => Close());
 
         _trayIcon = new NotifyIcon
         {
             Icon = Icon ?? SystemIcons.Application,
-            Text = "BiliGamePiP - B站游戏置顶小窗",
+            Text = $"BiliGamePiP {UpdateService.CurrentVersionText}",
             ContextMenuStrip = trayMenu,
             Visible = true
         };
@@ -241,7 +330,6 @@ public sealed class MainForm : Form
         }
         catch
         {
-            // Fall back to default icon
         }
     }
 
@@ -262,7 +350,6 @@ public sealed class MainForm : Form
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.AreDevToolsEnabled = false;
 
-            // 拦截 B 站点击视频新开窗口，全部在当前窗口内打开
             core.NewWindowRequested += (_, e) =>
             {
                 e.Handled = true;
@@ -275,7 +362,7 @@ public sealed class MainForm : Form
             core.SourceChanged += (_, _) =>
             {
                 string uri = core.Source ?? string.Empty;
-                _urlTextBox.Text = uri;
+                _addressBar.Text = uri;
                 if (uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                     uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                 {
@@ -326,11 +413,86 @@ public sealed class MainForm : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
+
+        // 启动后静默检查一次 GitHub 新版本
+        _ = CheckUpdatesOnStartupAsync();
+    }
+
+    private async Task CheckUpdatesOnStartupAsync()
+    {
+        await Task.Delay(2500);
+        var info = await UpdateService.CheckForUpdateAsync();
+        if (info is null || IsDisposed) return;
+
+        _availableUpdate = info;
+        _btnUpdate.Text = $"↑ {info.TagName}";
+        _btnUpdate.Visible = true;
+
+        bool skipped = string.Equals(_settings.SkippedUpdateVersion, info.TagName, StringComparison.OrdinalIgnoreCase);
+        if (!skipped && !_isClickThrough && Visible)
+        {
+            ShowUpdateDialog(info);
+        }
+    }
+
+    private async Task<bool> CheckUpdatesManuallyAsync()
+    {
+        var info = await UpdateService.CheckForUpdateAsync();
+        if (info is null)
+        {
+            MessageBox.Show(
+                $"当前已是最新版本（{UpdateService.CurrentVersionText}）。",
+                "检查更新 - BiliGamePiP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return false;
+        }
+
+        _availableUpdate = info;
+        _btnUpdate.Text = $"↑ {info.TagName}";
+        _btnUpdate.Visible = true;
+        ShowUpdateDialog(info);
+        return true;
+    }
+
+    private void ShowUpdateDialog(UpdateInfo info)
+    {
+        if (_isClickThrough)
+        {
+            SetClickThrough(false, showOsd: false);
+        }
+
+        bool prevTopMost = TopMost;
+        TopMost = false;
+
+        try
+        {
+            using var dialog = new UpdateForm(info);
+            dialog.ShowDialog(this);
+
+            if (dialog.SkipThisVersion)
+            {
+                _settings.SkippedUpdateVersion = info.TagName;
+                SettingsStore.Save(_settings);
+            }
+            else if (dialog.LaunchInstallerAndExit)
+            {
+                Close();
+            }
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                TopMost = prevTopMost;
+            }
+        }
     }
 
     private void NavigateToInput(string rawInput)
     {
-        if (!_webViewReady) return;
+        var core = _webView.CoreWebView2;
+        if (!_webViewReady || core is null) return;
 
         string text = (rawInput ?? string.Empty).Trim();
         if (string.IsNullOrEmpty(text))
@@ -349,11 +511,11 @@ public sealed class MainForm : Form
 
         try
         {
-            _webView.CoreWebView2.Navigate(text);
+            core.Navigate(text);
         }
         catch
         {
-            _webView.CoreWebView2.Navigate("https://www.bilibili.com");
+            core.Navigate("https://www.bilibili.com");
         }
     }
 
@@ -370,14 +532,13 @@ public sealed class MainForm : Form
             WindowState = FormWindowState.Normal;
             FormBorderStyle = FormBorderStyle.None;
             TopMost = true;
-            Padding = new Padding(4);
-            BackColor = Color.FromArgb(46, 46, 58);
+            Padding = new Padding(3);
+            BackColor = TechTheme.BorderBright;
 
             _normalToolbar.Visible = false;
             _miniDragBar.Visible = !_isClickThrough;
 
-            var targetBounds = GetSafeMiniBounds();
-            Bounds = targetBounds;
+            Bounds = GetSafeMiniBounds();
             Opacity = Math.Clamp(_settings.MiniOpacity, 0.35, 1.0);
 
             _trayToggleMiniItem.Text = "退出置顶小窗";
@@ -398,7 +559,7 @@ public sealed class MainForm : Form
             Opacity = 1.0;
             TopMost = false;
             Padding = Padding.Empty;
-            BackColor = Color.FromArgb(20, 20, 26);
+            BackColor = TechTheme.BgWindow;
             FormBorderStyle = FormBorderStyle.Sizable;
 
             _miniDragBar.Visible = false;
@@ -442,7 +603,7 @@ public sealed class MainForm : Form
             if (_isMiniMode)
             {
                 _miniDragBar.Visible = true;
-                Padding = new Padding(4);
+                Padding = new Padding(3);
             }
             _trayToggleClickThroughItem.Text = "锁定鼠标穿透";
             if (showOsd)
@@ -526,7 +687,6 @@ public sealed class MainForm : Form
             Show();
         }
 
-        // 打开设置弹窗时暂时注销全局热键，避免录制按键时被本软件拦截
         _hotkeyManager?.UnregisterAll();
 
         bool prevTopMost = TopMost;
@@ -534,7 +694,17 @@ public sealed class MainForm : Form
 
         try
         {
-            using var dialog = new SettingsForm(_settings);
+            using var dialog = new SettingsForm(_settings, async () =>
+            {
+                var info = await UpdateService.CheckForUpdateAsync();
+                if (info is null) return false;
+                _availableUpdate = info;
+                _btnUpdate.Text = $"↑ {info.TagName}";
+                _btnUpdate.Visible = true;
+                ShowUpdateDialog(info);
+                return true;
+            });
+
             if (dialog.ShowDialog(this) == DialogResult.OK)
             {
                 _settings = dialog.ResultSettings;
@@ -548,8 +718,11 @@ public sealed class MainForm : Form
         }
         finally
         {
-            TopMost = prevTopMost;
-            ApplyHotkeysWithWarning();
+            if (!IsDisposed)
+            {
+                TopMost = prevTopMost;
+                ApplyHotkeysWithWarning();
+            }
         }
     }
 
@@ -563,7 +736,7 @@ public sealed class MainForm : Form
             MessageBox.Show(
                 "以下快捷键已被其他软件占用，注册失败：\n" +
                 string.Join("\n", failures) +
-                "\n\n请点击「⚙ 快捷键」更换为其他按键。",
+                "\n\n请点击「⚙ 设置」更换为其他按键。",
                 "快捷键冲突提示",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
@@ -573,23 +746,23 @@ public sealed class MainForm : Form
     private void UpdateMiniHintText()
     {
         _miniHintLabel.Text =
-            $"{_settings.SeekBackward.ToDisplayString()}后退  " +
-            $"{_settings.PlayPause.ToDisplayString()}暂停  " +
-            $"{_settings.SeekForward.ToDisplayString()}快进  " +
+            $"{_settings.SeekBackward.ToDisplayString()}后退 · " +
+            $"{_settings.PlayPause.ToDisplayString()}暂停 · " +
+            $"{_settings.SeekForward.ToDisplayString()}快进 · " +
             $"{_settings.ToggleClickThrough.ToDisplayString()}穿透";
     }
 
     private async Task ExecuteScriptSafeAsync(string script)
     {
-        if (!_webViewReady || _webView.CoreWebView2 is null) return;
+        var core = _webView.CoreWebView2;
+        if (!_webViewReady || core is null) return;
 
         try
         {
-            await _webView.CoreWebView2.ExecuteScriptAsync(script);
+            await core.ExecuteScriptAsync(script);
         }
         catch
         {
-            // Ignore transient navigation errors
         }
     }
 
@@ -604,6 +777,7 @@ public sealed class MainForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        Win32.ApplyDarkWindowChrome(Handle, TechTheme.BgWindow, TechTheme.BorderSubtle, roundedCorners: true);
         if (_isClickThrough)
         {
             Win32.SetClickThrough(Handle, true);
@@ -669,40 +843,5 @@ public sealed class MainForm : Form
         _hotkeyManager?.Dispose();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
-    }
-
-    private static Button CreateToolbarButton(string text, int width, Color backColor)
-    {
-        var btn = new Button
-        {
-            Text = text,
-            Width = width,
-            Height = 30,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = backColor,
-            ForeColor = Color.White,
-            Margin = new Padding(0, 1, 6, 1),
-            Cursor = Cursors.Hand
-        };
-        btn.FlatAppearance.BorderSize = 0;
-        return btn;
-    }
-
-    private static Button CreateMiniButton(string text, int width, Color backColor)
-    {
-        var btn = new Button
-        {
-            Text = text,
-            Width = width,
-            Height = 22,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = backColor,
-            ForeColor = Color.White,
-            Font = new Font("Microsoft YaHei UI", 8f),
-            Margin = new Padding(4, 0, 0, 0),
-            Cursor = Cursors.Hand
-        };
-        btn.FlatAppearance.BorderSize = 0;
-        return btn;
     }
 }

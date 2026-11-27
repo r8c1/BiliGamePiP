@@ -1,57 +1,94 @@
 using System;
 using System.Drawing;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using BiliGamePiP.Controls;
 using BiliGamePiP.Models;
 using BiliGamePiP.Native;
+using BiliGamePiP.Services;
 
 namespace BiliGamePiP.Forms;
 
 public sealed class SettingsForm : Form
 {
     private readonly AppSettings _working;
+    private readonly Func<Task<bool>>? _onManualCheckUpdate;
 
     private readonly TextBox _txtSeekBack;
     private readonly TextBox _txtPlayPause;
     private readonly TextBox _txtSeekForward;
     private readonly TextBox _txtClickThrough;
     private readonly TextBox _txtMiniMode;
-    private readonly NumericUpDown _numSeekSeconds;
-    private readonly TrackBar _trackOpacity;
+    private readonly Label _lblSeekValue;
+    private readonly TechSlider _sliderOpacity;
     private readonly Label _lblOpacityValue;
+    private readonly TechButton _btnCheckUpdate;
+    private readonly Label _lblUpdateHint;
 
     public AppSettings ResultSettings => _working;
 
-    public SettingsForm(AppSettings current)
+    public SettingsForm(AppSettings current, Func<Task<bool>>? onManualCheckUpdate = null)
     {
         _working = current.Clone();
+        _onManualCheckUpdate = onManualCheckUpdate;
 
-        Text = "快捷键与小窗设置 - BiliGamePiP";
+        Text = "偏好设置 - BiliGamePiP";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = Color.FromArgb(24, 24, 32);
-        ForeColor = Color.FromArgb(238, 238, 245);
+        BackColor = TechTheme.BgWindow;
+        ForeColor = TechTheme.TextPrimary;
         Font = new Font("Microsoft YaHei UI", 9.5f);
-        ClientSize = new Size(470, 415);
+        ClientSize = new Size(512, 526);
 
-        var root = new TableLayoutPanel
+        // 顶部标题与版本更新行
+        var lblTitle = new Label
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(18, 16, 18, 14),
-            ColumnCount = 2,
-            RowCount = 9
+            Text = "偏好设置",
+            Font = new Font("Microsoft YaHei UI", 14f, FontStyle.Bold),
+            ForeColor = TechTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(22, 16)
         };
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48f));
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52f));
 
-        for (int i = 0; i < 7; i++)
+        _lblUpdateHint = new Label
         {
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));
-        }
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f));
+            Text = $"当前版本 {UpdateService.CurrentVersionText}",
+            Font = new Font("Microsoft YaHei UI", 8.5f),
+            ForeColor = TechTheme.TextSecondary,
+            AutoSize = true,
+            Location = new Point(24, 46)
+        };
+
+        _btnCheckUpdate = new TechButton
+        {
+            Text = "↻ 检查更新",
+            Variant = TechButtonVariant.CyanAccent,
+            Size = new Size(104, 30),
+            Location = new Point(386, 22),
+            CornerRadius = 15
+        };
+        _btnCheckUpdate.Click += async (_, _) => await RunUpdateCheckAsync();
+
+        // Card 1: 全局快捷键
+        var hotkeyCard = new TechCardPanel
+        {
+            Location = new Point(22, 74),
+            Size = new Size(468, 224),
+            Padding = new Padding(16, 12, 16, 12)
+        };
+
+        var lblHotkeysTitle = new Label
+        {
+            Text = "全局快捷键（点击右侧按键框后直接按键盘录制）",
+            Font = new Font("Microsoft YaHei UI", 8.8f, FontStyle.Bold),
+            ForeColor = TechTheme.AccentPink,
+            AutoSize = true,
+            Location = new Point(16, 12)
+        };
+        hotkeyCard.Controls.Add(lblHotkeysTitle);
 
         _txtSeekBack = CreateHotkeyBox(() => _working.SeekBackward, v => _working.SeekBackward = v);
         _txtPlayPause = CreateHotkeyBox(() => _working.PlayPause, v => _working.PlayPause = v);
@@ -59,88 +96,131 @@ public sealed class SettingsForm : Form
         _txtClickThrough = CreateHotkeyBox(() => _working.ToggleClickThrough, v => _working.ToggleClickThrough = v);
         _txtMiniMode = CreateHotkeyBox(() => _working.ToggleMiniMode, v => _working.ToggleMiniMode = v);
 
-        AddRow(root, 0, "后退（快退）快捷键：", _txtSeekBack);
-        AddRow(root, 1, "暂停 / 播放快捷键：", _txtPlayPause);
-        AddRow(root, 2, "快进快捷键：", _txtSeekForward);
-        AddRow(root, 3, "鼠标穿透锁定 / 解锁：", _txtClickThrough);
-        AddRow(root, 4, "切换置顶小窗模式：", _txtMiniMode);
+        AddHotkeyRow(hotkeyCard, 0, "后退（快退）", _txtSeekBack);
+        AddHotkeyRow(hotkeyCard, 1, "暂停 / 播放", _txtPlayPause);
+        AddHotkeyRow(hotkeyCard, 2, "快进", _txtSeekForward);
+        AddHotkeyRow(hotkeyCard, 3, "鼠标穿透锁定 / 解锁", _txtClickThrough);
+        AddHotkeyRow(hotkeyCard, 4, "切换普通选片 / 置顶小窗", _txtMiniMode);
 
-        _numSeekSeconds = new NumericUpDown
+        // Card 2: 播放与小窗体验
+        var playCard = new TechCardPanel
         {
-            Minimum = 1,
-            Maximum = 60,
-            Value = Math.Clamp(_working.SeekSeconds, 1, 60),
-            Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(38, 38, 50),
-            ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle,
-            Margin = new Padding(0, 5, 0, 5)
+            Location = new Point(22, 310),
+            Size = new Size(468, 114),
+            Padding = new Padding(16, 12, 16, 12)
         };
-        AddRow(root, 5, "每次快进 / 后退秒数：", _numSeekSeconds);
 
-        var opacityPanel = new Panel { Dock = DockStyle.Fill };
-        _lblOpacityValue = new Label
+        var lblPlayTitle = new Label
         {
-            Text = $"{(int)Math.Round(_working.MiniOpacity * 100)}%",
-            Dock = DockStyle.Right,
-            Width = 46,
-            TextAlign = ContentAlignment.MiddleRight,
-            ForeColor = Color.FromArgb(200, 200, 215)
+            Text = "播放与小窗体验",
+            Font = new Font("Microsoft YaHei UI", 8.8f, FontStyle.Bold),
+            ForeColor = TechTheme.AccentCyan,
+            AutoSize = true,
+            Location = new Point(16, 12)
         };
-        _trackOpacity = new TrackBar
+        playCard.Controls.Add(lblPlayTitle);
+
+        // 快进步长步进器
+        var lblSeek = new Label
+        {
+            Text = "每次快进 / 后退步长",
+            ForeColor = TechTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(16, 44)
+        };
+
+        var btnMinus = new TechButton
+        {
+            Text = "−",
+            Size = new Size(30, 26),
+            Location = new Point(308, 39),
+            CornerRadius = 7
+        };
+        _lblSeekValue = new Label
+        {
+            Text = $"{_working.SeekSeconds} 秒",
+            ForeColor = TechTheme.TextPrimary,
+            Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Location = new Point(342, 39),
+            Size = new Size(74, 26)
+        };
+        var btnPlus = new TechButton
+        {
+            Text = "+",
+            Size = new Size(30, 26),
+            Location = new Point(420, 39),
+            CornerRadius = 7
+        };
+        btnMinus.Click += (_, _) =>
+        {
+            _working.SeekSeconds = Math.Clamp(_working.SeekSeconds - 1, 1, 60);
+            _lblSeekValue.Text = $"{_working.SeekSeconds} 秒";
+        };
+        btnPlus.Click += (_, _) =>
+        {
+            _working.SeekSeconds = Math.Clamp(_working.SeekSeconds + 1, 1, 60);
+            _lblSeekValue.Text = $"{_working.SeekSeconds} 秒";
+        };
+
+        playCard.Controls.Add(lblSeek);
+        playCard.Controls.Add(btnMinus);
+        playCard.Controls.Add(_lblSeekValue);
+        playCard.Controls.Add(btnPlus);
+
+        // 小窗透明度滑块
+        var lblOpacity = new Label
+        {
+            Text = "小窗不透明度",
+            ForeColor = TechTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(16, 80)
+        };
+
+        _sliderOpacity = new TechSlider
         {
             Minimum = 40,
             Maximum = 100,
-            TickFrequency = 10,
             Value = Math.Clamp((int)Math.Round(_working.MiniOpacity * 100), 40, 100),
-            Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(24, 24, 32)
+            Location = new Point(220, 74),
+            Size = new Size(178, 28)
         };
-        _trackOpacity.ValueChanged += (_, _) =>
+        _lblOpacityValue = new Label
         {
-            _lblOpacityValue.Text = $"{_trackOpacity.Value}%";
+            Text = $"{_sliderOpacity.Value}%",
+            ForeColor = TechTheme.AccentCyan,
+            Font = new Font("Consolas", 9.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight,
+            Location = new Point(402, 77),
+            Size = new Size(48, 22)
         };
-        opacityPanel.Controls.Add(_trackOpacity);
-        opacityPanel.Controls.Add(_lblOpacityValue);
-        AddRow(root, 6, "小窗不透明度：", opacityPanel);
+        _sliderOpacity.ValueChanged += (_, _) =>
+        {
+            _working.MiniOpacity = _sliderOpacity.Value / 100.0;
+            _lblOpacityValue.Text = $"{_sliderOpacity.Value}%";
+        };
 
+        playCard.Controls.Add(lblOpacity);
+        playCard.Controls.Add(_sliderOpacity);
+        playCard.Controls.Add(_lblOpacityValue);
+
+        // 底部提示与操作按钮
         var tipLabel = new Label
         {
-            Text = "提示：点击输入框后直接按下想要的按键即可录制（按 Backspace 清空）。\r\n" +
-                   "使用小键盘数字键（Num0~Num9）时请保持 NumLock 开启；\r\n" +
-                   "小键盘 7/8/9 与原神、终末地主键盘 1-4 切人完全独立，互不冲突。",
-            Dock = DockStyle.Fill,
-            ForeColor = Color.FromArgb(156, 160, 178),
-            Font = new Font("Microsoft YaHei UI", 8.5f),
-            Padding = new Padding(0, 8, 0, 4)
+            Text = "提示：按 Backspace 可清空热键；使用小键盘数字键请保持 NumLock 开启。",
+            ForeColor = TechTheme.TextSecondary,
+            Font = new Font("Microsoft YaHei UI", 8.3f),
+            AutoSize = true,
+            Location = new Point(24, 434)
         };
-        root.Controls.Add(tipLabel, 0, 7);
-        root.SetColumnSpan(tipLabel, 2);
 
-        var btnBar = new FlowLayoutPanel
+        var btnReset = new TechButton
         {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(0, 6, 0, 0)
+            Text = "恢复默认",
+            Variant = TechButtonVariant.Ghost,
+            Size = new Size(92, 36),
+            Location = new Point(22, 468)
         };
-
-        var btnSave = CreateActionButton("保存并应用", Color.FromArgb(251, 114, 153), Color.White);
-        btnSave.Click += (_, _) =>
-        {
-            _working.SeekSeconds = (int)_numSeekSeconds.Value;
-            _working.MiniOpacity = _trackOpacity.Value / 100.0;
-            DialogResult = DialogResult.OK;
-            Close();
-        };
-
-        var btnCancel = CreateActionButton("取消", Color.FromArgb(52, 52, 66), Color.White);
-        btnCancel.Click += (_, _) =>
-        {
-            DialogResult = DialogResult.Cancel;
-            Close();
-        };
-
-        var btnReset = CreateActionButton("恢复默认", Color.FromArgb(44, 44, 56), Color.FromArgb(220, 220, 232));
         btnReset.Click += (_, _) =>
         {
             var def = new AppSettings();
@@ -154,15 +234,86 @@ public sealed class SettingsForm : Form
             RefreshFields();
         };
 
-        btnBar.Controls.Add(btnSave);
-        btnBar.Controls.Add(btnCancel);
-        btnBar.Controls.Add(btnReset);
+        var btnCancel = new TechButton
+        {
+            Text = "取消",
+            Variant = TechButtonVariant.Ghost,
+            Size = new Size(88, 36),
+            Location = new Point(276, 468)
+        };
+        btnCancel.Click += (_, _) =>
+        {
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
 
-        root.Controls.Add(btnBar, 0, 8);
-        root.SetColumnSpan(btnBar, 2);
+        var btnSave = new TechButton
+        {
+            Text = "保存并应用",
+            Variant = TechButtonVariant.PrimaryGradient,
+            Size = new Size(116, 36),
+            Location = new Point(374, 468)
+        };
+        btnSave.Click += (_, _) =>
+        {
+            DialogResult = DialogResult.OK;
+            Close();
+        };
 
-        Controls.Add(root);
+        Controls.Add(lblTitle);
+        Controls.Add(_lblUpdateHint);
+        Controls.Add(_btnCheckUpdate);
+        Controls.Add(hotkeyCard);
+        Controls.Add(playCard);
+        Controls.Add(tipLabel);
+        Controls.Add(btnReset);
+        Controls.Add(btnCancel);
+        Controls.Add(btnSave);
+
         RefreshFields();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Win32.ApplyDarkWindowChrome(Handle, TechTheme.BgWindow, TechTheme.BorderSubtle);
+    }
+
+    private async Task RunUpdateCheckAsync()
+    {
+        _btnCheckUpdate.Enabled = false;
+        _lblUpdateHint.ForeColor = TechTheme.AccentCyan;
+        _lblUpdateHint.Text = "正在检查 GitHub 最新版本...";
+
+        try
+        {
+            if (_onManualCheckUpdate is not null)
+            {
+                bool found = await _onManualCheckUpdate();
+                _lblUpdateHint.ForeColor = found ? TechTheme.AccentPink : Color.FromArgb(74, 222, 128);
+                _lblUpdateHint.Text = found
+                    ? "已检测到新版本，请在更新窗口中升级。"
+                    : $"✓ 已是最新版本 ({UpdateService.CurrentVersionText})";
+            }
+            else
+            {
+                var info = await UpdateService.CheckForUpdateAsync();
+                if (info is null)
+                {
+                    _lblUpdateHint.ForeColor = Color.FromArgb(74, 222, 128);
+                    _lblUpdateHint.Text = $"✓ 已是最新版本 ({UpdateService.CurrentVersionText})";
+                }
+                else
+                {
+                    _lblUpdateHint.ForeColor = TechTheme.AccentPink;
+                    _lblUpdateHint.Text = $"发现新版本 {info.TagName}";
+                }
+            }
+        }
+        finally
+        {
+            _btnCheckUpdate.Enabled = true;
+        }
     }
 
     private void RefreshFields()
@@ -172,22 +323,49 @@ public sealed class SettingsForm : Form
         _txtSeekForward.Text = _working.SeekForward.ToDisplayString();
         _txtClickThrough.Text = _working.ToggleClickThrough.ToDisplayString();
         _txtMiniMode.Text = _working.ToggleMiniMode.ToDisplayString();
-        _numSeekSeconds.Value = Math.Clamp(_working.SeekSeconds, 1, 60);
-        _trackOpacity.Value = Math.Clamp((int)Math.Round(_working.MiniOpacity * 100), 40, 100);
-        _lblOpacityValue.Text = $"{_trackOpacity.Value}%";
+        _lblSeekValue.Text = $"{Math.Clamp(_working.SeekSeconds, 1, 60)} 秒";
+        _sliderOpacity.Value = Math.Clamp((int)Math.Round(_working.MiniOpacity * 100), 40, 100);
+        _lblOpacityValue.Text = $"{_sliderOpacity.Value}%";
     }
 
-    private static void AddRow(TableLayoutPanel panel, int row, string labelText, Control control)
+    private static void AddHotkeyRow(Control card, int index, string labelText, TextBox box)
     {
+        int y = 40 + index * 35;
         var label = new Label
         {
             Text = labelText,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(226, 226, 236)
+            ForeColor = TechTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(16, y + 4)
         };
-        panel.Controls.Add(label, 0, row);
-        panel.Controls.Add(control, 1, row);
+
+        var wrap = new TechCardPanel
+        {
+            Location = new Point(268, y),
+            Size = new Size(182, 28),
+            CornerRadius = 8,
+            CardBackColor = TechTheme.BgInput,
+            CardBorderColor = TechTheme.BorderSubtle
+        };
+        box.Bounds = new Rectangle(8, 4, 166, 20);
+        box.Enter += (_, _) =>
+        {
+            wrap.CardBorderColor = TechTheme.AccentPink;
+            wrap.CardBackColor = Color.FromArgb(38, 24, 42);
+            box.BackColor = Color.FromArgb(38, 24, 42);
+            wrap.Invalidate();
+        };
+        box.Leave += (_, _) =>
+        {
+            wrap.CardBorderColor = TechTheme.BorderSubtle;
+            wrap.CardBackColor = TechTheme.BgInput;
+            box.BackColor = TechTheme.BgInput;
+            wrap.Invalidate();
+        };
+        wrap.Controls.Add(box);
+
+        card.Controls.Add(label);
+        card.Controls.Add(wrap);
     }
 
     private TextBox CreateHotkeyBox(Func<HotkeyBinding> getter, Action<HotkeyBinding> setter)
@@ -195,24 +373,23 @@ public sealed class SettingsForm : Form
         var box = new TextBox
         {
             ReadOnly = true,
-            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.None,
             TextAlign = HorizontalAlignment.Center,
-            BackColor = Color.FromArgb(38, 38, 50),
-            ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle,
-            Margin = new Padding(0, 5, 0, 5),
+            BackColor = TechTheme.BgInput,
+            ForeColor = Color.FromArgb(255, 208, 223),
+            Font = new Font("Consolas", 9.5f, FontStyle.Bold),
             Cursor = Cursors.Hand
         };
 
         box.Enter += (_, _) =>
         {
-            box.BackColor = Color.FromArgb(58, 42, 62);
+            box.ForeColor = Color.White;
             box.Text = "请按下新快捷键...";
         };
 
         box.Leave += (_, _) =>
         {
-            box.BackColor = Color.FromArgb(38, 38, 50);
+            box.ForeColor = Color.FromArgb(255, 208, 223);
             box.Text = getter().ToDisplayString();
         };
 
@@ -251,22 +428,5 @@ public sealed class SettingsForm : Form
         };
 
         return box;
-    }
-
-    private static Button CreateActionButton(string text, Color back, Color fore)
-    {
-        var btn = new Button
-        {
-            Text = text,
-            AutoSize = true,
-            MinimumSize = new Size(92, 32),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = back,
-            ForeColor = fore,
-            Margin = new Padding(8, 0, 0, 0),
-            Cursor = Cursors.Hand
-        };
-        btn.FlatAppearance.BorderSize = 0;
-        return btn;
     }
 }
