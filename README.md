@@ -6,13 +6,13 @@
 
   <p>
     <a href="https://r8c1.github.io/BiliGamePiP/">
-      <img src="https://img.shields.io/badge/产品官网-BiliGamePiP-fb7299?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Website" />
+      <img src="https://img.shields.io/badge/%E4%BA%A7%E5%93%81%E5%AE%98%E7%BD%91-BiliGamePiP-fb7299?style=for-the-badge&logo=googlechrome&logoColor=white" alt="产品官网" />
     </a>
     <a href="https://github.com/r8c1/BiliGamePiP/releases/latest">
-      <img src="https://img.shields.io/github/v/release/r8c1/BiliGamePiP?style=for-the-badge&color=38bdf8&label=最新版本" alt="Latest Release" />
+      <img src="https://img.shields.io/github/v/release/r8c1/BiliGamePiP?style=for-the-badge&color=38bdf8&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="最新版本" />
     </a>
     <a href="https://github.com/r8c1/BiliGamePiP/releases">
-      <img src="https://img.shields.io/github/downloads/r8c1/BiliGamePiP/total?style=for-the-badge&color=22c55e&label=总下载量" alt="Downloads" />
+      <img src="https://img.shields.io/github/downloads/r8c1/BiliGamePiP/total?style=for-the-badge&color=22c55e&label=%E6%80%BB%E4%B8%8B%E8%BD%BD%E9%87%8F" alt="总下载量" />
     </a>
     <a href="LICENSE">
       <img src="https://img.shields.io/badge/License-MIT-8b5cf6?style=for-the-badge" alt="MIT License" />
