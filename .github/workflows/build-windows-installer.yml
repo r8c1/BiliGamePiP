@@ -63,6 +63,18 @@ jobs:
             -p:DebugSymbols=false `
             -o publish/win-x64
 
+      - name: Run Windows startup smoke test
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "publish\win-x64\BiliGamePiP.exe" -ArgumentList "--smoke-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            $log = Join-Path $env:LOCALAPPDATA "BiliGamePiP\crash.log"
+            if (Test-Path $log) { Get-Content $log }
+            Write-Error "Smoke test failed with exit code $($p.ExitCode)"
+            exit $p.ExitCode
+          }
+          Write-Host "Smoke test passed (ExitCode=0)"
+
       - name: Ensure Inno Setup 6 is available
         shell: pwsh
         run: |

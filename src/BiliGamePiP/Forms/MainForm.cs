@@ -53,6 +53,13 @@ public sealed class MainForm : Form
 
         TryLoadAppIcon();
 
+        // 先初始化 WebView2 实例，供工具栏按钮回调引用
+        _webView = new WebView2
+        {
+            Dock = DockStyle.Fill,
+            DefaultBackgroundColor = TechTheme.BgWindow
+        };
+
         // 1. 极简暗夜科技感顶部工具栏
         _normalToolbar = new Panel
         {
@@ -265,13 +272,7 @@ public sealed class MainForm : Form
         _miniDragBar.Controls.Add(_miniHintLabel);
         _miniDragBar.Controls.Add(miniButtons);
 
-        // 3. WebView2 浏览器控件
-        _webView = new WebView2
-        {
-            Dock = DockStyle.Fill,
-            DefaultBackgroundColor = TechTheme.BgWindow
-        };
-
+        // 3. 组装主布局（Fill 在前，Top 在后）
         Controls.Add(_webView);
         Controls.Add(_miniDragBar);
         Controls.Add(_normalToolbar);
@@ -841,7 +842,19 @@ public sealed class MainForm : Form
         SettingsStore.Save(_settings);
 
         _hotkeyManager?.Dispose();
+        _hotkeyManager = null;
         _trayIcon.Visible = false;
-        _trayIcon.Dispose();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _hotkeyManager?.Dispose();
+            _hotkeyManager = null;
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

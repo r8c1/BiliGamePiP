@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
@@ -183,6 +184,7 @@ public sealed class TechCardPanel : Panel
             ControlStyles.AllPaintingInWmPaint |
             ControlStyles.OptimizedDoubleBuffer |
             ControlStyles.ResizeRedraw |
+            ControlStyles.SupportsTransparentBackColor |
             ControlStyles.UserPaint,
             true);
         BackColor = Color.Transparent;
@@ -212,16 +214,29 @@ public sealed class TechAddressBar : Control
 
     public event EventHandler<string>? Submitted;
 
+    [AllowNull]
     public override string Text
     {
-        get => _inner.Text;
-        set => _inner.Text = value;
+        get => _inner?.Text ?? string.Empty;
+        set
+        {
+            if (_inner is not null)
+            {
+                _inner.Text = value ?? string.Empty;
+            }
+        }
     }
 
     public string PlaceholderText
     {
-        get => _inner.PlaceholderText;
-        set => _inner.PlaceholderText = value;
+        get => _inner?.PlaceholderText ?? string.Empty;
+        set
+        {
+            if (_inner is not null)
+            {
+                _inner.PlaceholderText = value ?? string.Empty;
+            }
+        }
     }
 
     public TechAddressBar()
@@ -232,7 +247,6 @@ public sealed class TechAddressBar : Control
             ControlStyles.ResizeRedraw |
             ControlStyles.UserPaint,
             true);
-        Height = 32;
         Cursor = Cursors.IBeam;
 
         _inner = new TextBox
@@ -256,6 +270,7 @@ public sealed class TechAddressBar : Control
         };
 
         Controls.Add(_inner);
+        Height = 32;
         LayoutInner();
     }
 
@@ -268,11 +283,12 @@ public sealed class TechAddressBar : Control
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        _inner.Focus();
+        _inner?.Focus();
     }
 
     private void LayoutInner()
     {
+        if (_inner is null) return;
         int h = _inner.PreferredHeight;
         int y = Math.Max(2, (Height - h) / 2);
         _inner.Bounds = new Rectangle(30, y, Math.Max(40, Width - 42), h);
@@ -293,11 +309,11 @@ public sealed class TechAddressBar : Control
         g.FillPath(fill, path);
         g.DrawPath(pen, path);
 
-        // Minimalist link/globe glyph
+        using var glyphFont = new Font("Segoe UI Symbol", 10.5f);
         TextRenderer.DrawText(
             g,
             "⌕",
-            new Font("Segoe UI Symbol", 10.5f),
+            glyphFont,
             new Rectangle(8, 0, 20, Height),
             _focused ? TechTheme.AccentPink : TechTheme.TextSecondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
